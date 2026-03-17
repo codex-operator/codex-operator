@@ -54,7 +54,7 @@ export default async function handler(req, res) {
         }
 
         while (authors.length < 7) {
-            authors.push({ name: 'Waiting...', color: '#555566' });
+            authors.push({ name: 'Write-Issues', color: '#555566' });
         }
 
         const width  = 850;
