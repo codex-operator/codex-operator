@@ -22,32 +22,31 @@ export default async function handler(req, res) {
                     authors.push(cleanName);
                 }
             }
-            // Увеличено количество до 7
             if (authors.length >= 7) break;
         }
         
-        // Увеличено количество до 7
         while (authors.length < 7) {
             authors.push(`Waiting...`);
         }
 
-        const width = 850;
-        const height = 200;
+        const width = 800;
+        const height = 250;
 
         let styles = '';
         let textElements = '';
 
-        // Добавлено несколько новых цветов для 7 элементов
         const colors = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00', '#ffb86c', '#f1fa8c'];
 
         authors.forEach((author, i) => {
             const durX = (Math.random() * 4 + 4).toFixed(1); 
             const durY = (Math.random() * 3 + 3).toFixed(1); 
             
-            // Вычисляем случайную отрицательную задержку
-            // Это заставит анимацию стартовать с середины пути
             const delayX = -(Math.random() * durX).toFixed(1);
             const delayY = -(Math.random() * durY).toFixed(1);
+
+            // Случайный выбор изначального вектора движения
+            const dirX = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
+            const dirY = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
 
             const color = colors[i % colors.length];
             
@@ -56,17 +55,18 @@ export default async function handler(req, res) {
             const maxX = width - textWidth - 20;
             const maxY = height - 20;
 
-            // В свойства animation добавлены ${delayX}s и ${delayY}s
             styles += `
                 .groupX${i} {
-                    animation: moveX${i} ${durX}s linear ${delayX}s infinite alternate;
+                    animation: moveX${i} ${durX}s linear ${delayX}s infinite ${dirX};
                 }
                 .userY${i} {
                     fill: ${color};
                     font-family: monospace;
                     font-size: 18px;
                     font-weight: bold;
-                    animation: moveY${i} ${durY}s linear ${delayY}s infinite alternate;
+                    /* Двойная тень для создания плотного темного контура */
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.9), -1px -1px 3px rgba(0,0,0,0.7);
+                    animation: moveY${i} ${durY}s linear ${delayY}s infinite ${dirY};
                 }
                 @keyframes moveX${i} { 
                     0% { transform: translateX(10px); } 
@@ -81,10 +81,11 @@ export default async function handler(req, res) {
             textElements += `<g class="groupX${i}"><text class="userY${i}">${author}</text></g>\n`;
         });
 
+        // fill="transparent" делает фон прозрачным, а stroke убран, чтобы не было рамки
         const svg = `
             <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-                <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#30363d" stroke-width="2"/>
-                <text x="15" y="25" fill="#8b949e" font-family="monospace" font-size="14">Heroes from Issues:</text>
+                <rect width="100%" height="100%" fill="transparent" />
+                <text x="15" y="25" fill="#8b949e" font-family="monospace" font-size="14" style="text-shadow: 1px 1px 2px #000;">Heroes from Issues:</text>
                 
                 <style>${styles}</style>
                 ${textElements}
@@ -92,13 +93,14 @@ export default async function handler(req, res) {
         `;
 
         res.setHeader('Content-Type', 'image/svg+xml');
-        res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
+        // Запрещаем жесткое кэширование браузером, но оставляем кэш Vercel на 60 секунд
+        res.setHeader('Cache-Control', 'no-cache, s-maxage=60, stale-while-revalidate');
         res.status(200).send(svg.trim());
 
     } catch (error) {
         const errorSvg = `
             <svg width="800" height="250" xmlns="http://www.w3.org/2000/svg">
-                <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#ff0000" stroke-width="2"/>
+                <rect width="100%" height="100%" fill="transparent" />
                 <text x="20" y="40" fill="#ff0000" font-family="monospace" font-size="16">Error loading GitHub data.</text>
             </svg>
         `;
