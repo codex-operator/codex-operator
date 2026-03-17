@@ -1,7 +1,21 @@
 const FALLBACK_COLORS = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00', '#ffb86c', '#f1fa8c'];
 
+// ── Security: max raw title length before regex ──────────────────────────────
+const MAX_TITLE_LEN = 60;
+
+// ── Strict regex – no .*? wildcards, fixed char class, anchored ──────────────
+// Accepts: <HeroeName|Username>  or  <HeroeName|Username|#RRGGBB>
+const ISSUE_RE = /^<\s*HeroeName\s*\|\s*([a-zA-Z\u0400-\u04FF0-9_ -]{1,15})\s*(?:\|\s*(#[0-9a-fA-F]{3,6})\s*)?\s*>$/i;
+
 function escapeXml(str) {
-    return str.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(str).replace(/[<>&"']/g, c =>
+        ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c])
+    );
+}
+
+// CSS-context sanitizer: allow only hex chars and # (used for color in <style>)
+function safeCssColor(color) {
+    return /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#888888';
 }
 
 function isValidHex(color) {
@@ -30,26 +44,33 @@ export default async function handler(req, res) {
         if (!apiRes.ok) throw new Error(`GitHub API error: ${apiRes.status}`);
 
         const issues = await apiRes.json();
-        const authors = [];
-        const seen    = new Set();
-
-        // Matches:
-        //   <HeroeName|Username>
-        //   <HeroeName|Username|#RRGGBB>  or  <HeroeName|Username|#RGB>
-        const RE = /^<\s*heroename\s*\|\s*([a-zA-Z\u0400-\u04FF0-9_ -]{1,15})\s*(?:\|\s*(#[0-9a-fA-F]{3,6})\s*)?\s*>$/i;
+        const authors        = [];
+        const seenNames      = new Set();          // уникальные hero-имена
+        const authorIssueMap = new Map();          // GitHub login → кол-во принятых issues
 
         for (const issue of issues) {
             const raw = (issue.title || '').trim();
-            const m   = raw.match(RE);
+
+            // ── ReDoS mitigation: reject long titles before regex ─────────────
+            if (raw.length > MAX_TITLE_LEN) continue;
+
+            const m = raw.match(ISSUE_RE);
             if (!m) continue;
 
+            const login = (issue.user?.login || '').toLowerCase();
             const name  = m[1].trim();
             const color = (m[2] && isValidHex(m[2])) ? m[2] : randomColor();
 
-            if (!seen.has(name)) {
-                seen.add(name);
-                authors.push({ name, color });
-            }
+            // ── Limit: не более 2 принятых issues от одного GitHub-аккаунта ───
+            const count = authorIssueMap.get(login) || 0;
+            if (count >= 2) continue;
+            authorIssueMap.set(login, count + 1);
+
+            // ── Дедупликация hero-имён ────────────────────────────────────────
+            if (seenNames.has(name.toLowerCase())) continue;
+            seenNames.add(name.toLowerCase());
+
+            authors.push({ name, color: safeCssColor(color) });
             if (authors.length >= 7) break;
         }
 
@@ -64,23 +85,23 @@ export default async function handler(req, res) {
         let elems  = '';
 
         authors.forEach(({ name, color }, i) => {
-            const durX  = (Math.random() * 4 + 4).toFixed(1);
-            const durY  = (Math.random() * 3 + 3).toFixed(1);
-            const delX  = -(Math.random() * durX).toFixed(1);
-            const delY  = -(Math.random() * durY).toFixed(1);
-            const dirX  = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
-            const dirY  = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
+            const durX = (Math.random() * 4 + 4).toFixed(1);
+            const durY = (Math.random() * 3 + 3).toFixed(1);
+            const delX = -(Math.random() * durX).toFixed(1);
+            const delY = -(Math.random() * durY).toFixed(1);
+            const dirX = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
+            const dirY = Math.random() > 0.5 ? 'alternate' : 'alternate-reverse';
 
-            const safeColor = isValidHex(color) ? color : '#888888';
             const charWidth = 10.8;
             const textWidth = name.length * charWidth;
             const maxX      = Math.max(10, width  - textWidth - 20);
             const maxY      = Math.max(40, height - 20);
             const safeName  = escapeXml(name);
 
+            // color already validated by safeCssColor – safe in CSS context
             styles += `
 .gX${i}{animation:mX${i} ${durX}s linear ${delX}s infinite ${dirX};}
-.tY${i}{fill:${safeColor};font-family:monospace;font-size:18px;font-weight:bold;
+.tY${i}{fill:${color};font-family:monospace;font-size:18px;font-weight:bold;
         text-shadow:2px 2px 4px rgba(0,0,0,.9),-1px -1px 3px rgba(0,0,0,.7);
         animation:mY${i} ${durY}s linear ${delY}s infinite ${dirY};}
 @keyframes mX${i}{0%{transform:translateX(10px)}100%{transform:translateX(${maxX}px)}}
