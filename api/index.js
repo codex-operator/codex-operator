@@ -29,8 +29,8 @@ export default async function handler(req, res) {
             authors.push(`Waiting...`);
         }
 
-        const width = 800;
-        const height = 250;
+        const width = 850;
+        const height = 200;
 
         let styles = '';
         let textElements = '';
