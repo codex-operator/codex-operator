@@ -3,19 +3,40 @@ export default async function handler(req, res) {
     const repo = req.query.repo || 'Image-storage';
 
     try {
-        // Получаем список Issues через публичное API GitHub
-        const apiRes = await fetch(`https://api.github.com/repos/${username}/${repo}/issues?state=all&per_page=30`);
+        // Увеличиваем лимит выборки, так как не все Issues могут содержать нужный тег
+        const apiRes = await fetch(`https://api.github.com/repos/${username}/${repo}/issues?state=all&per_page=50`);
         
         if (!apiRes.ok) {
             throw new Error('Не удалось получить данные от GitHub API');
         }
         
         const issues = await apiRes.json();
+        let authors = [];
 
-        // Собираем уникальные ники авторов
-        let authors = [...new Set(issues.map(i => i.user.login))].filter(Boolean).slice(0, 5);
+        // Проходим по всем полученным Issues
+        for (const issue of issues) {
+            // Объединяем заголовок и тело Issue для поиска
+            const content = `${issue.title} ${issue.body || ''}`;
+            
+            // Ищем текст внутри угловых скобок, например <Andrey> или <Ostin>
+            const match = content.match(/<([^>]+)>/);
+            
+            if (match && match[1]) {
+                // Очищаем текст от опасных символов (оставляем кириллицу, латиницу, цифры, пробелы, дефисы и подчеркивания)
+                // Ограничиваем длину до 15 символов, чтобы текст не вылезал за экран
+                const cleanName = match[1].replace(/[^a-zA-Zа-яА-Я0-9 _-]/g, '').trim().substring(0, 15);
+                
+                // Добавляем имя, если оно не пустое и еще не добавлено в массив (убираем дубликаты)
+                if (cleanName && !authors.includes(cleanName)) {
+                    authors.push(cleanName);
+                }
+            }
+            
+            // Как только набрали 5 человек, останавливаем поиск
+            if (authors.length >= 5) break;
+        }
         
-        // Если Issues меньше 5, заполняем пустые места заглушками
+        // Если найдено меньше 5 имен, заполняем пустые места
         while (authors.length < 5) {
             authors.push(`Waiting...`);
         }
@@ -32,17 +53,16 @@ export default async function handler(req, res) {
 
         authors.forEach((author, i) => {
             // Разная скорость для создания хаотичных траекторий
-            const durX = (Math.random() * 3 + 3).toFixed(1); // От 3 до 6 секунд
-            const durY = (Math.random() * 2 + 2).toFixed(1); // От 2 до 4 секунд
+            const durX = (Math.random() * 3 + 3).toFixed(1); 
+            const durY = (Math.random() * 2 + 2).toFixed(1); 
             const color = colors[i % colors.length];
             
-            // Расчет границ отскока на основе длины ника
+            // Расчет границ отскока на основе длины имени
             const charWidth = 9.6; 
             const textWidth = author.length * charWidth;
             const maxX = width - textWidth - 10;
             const maxY = height - 10;
 
-            // Генерация CSS-правил для каждого ника
             styles += `
                 .user${i} {
                     fill: ${color};
@@ -68,7 +88,7 @@ export default async function handler(req, res) {
         const svg = `
             <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
                 <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#30363d" stroke-width="2"/>
-                <text x="10" y="20" fill="#8b949e" font-family="monospace" font-size="12">Recent Issue Authors:</text>
+                <text x="10" y="20" fill="#8b949e" font-family="monospace" font-size="12">Heroes from Issues:</text>
                 
                 <style>${styles}</style>
                 ${textElements}
@@ -76,17 +96,14 @@ export default async function handler(req, res) {
         `;
 
         res.setHeader('Content-Type', 'image/svg+xml');
-        // Кэшируем на 60 секунд. При каждом запросе Vercel отдаст кэш, но в фоне пойдет за новыми данными
         res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
         res.status(200).send(svg.trim());
 
     } catch (error) {
-        // SVG с ошибкой, если репозиторий не найден или API GitHub недоступно
         const errorSvg = `
             <svg width="600" height="150" xmlns="http://www.w3.org/2000/svg">
                 <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#ff0000" stroke-width="2"/>
                 <text x="20" y="40" fill="#ff0000" font-family="monospace" font-size="16">Error loading GitHub data.</text>
-                <text x="20" y="70" fill="#8b949e" font-family="monospace" font-size="12">Check repository name or API limits.</text>
             </svg>
         `;
         res.setHeader('Content-Type', 'image/svg+xml');
