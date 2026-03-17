@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      contents: read        # нужно для checkout и чтения banned-words.txt
+      contents: read        # нужно для checkout и чтения banned-words/
 
     steps:
-      # ── 1. Checkout репозитория (нужен для чтения banned-words.txt) ──────────
+      # ── 1. Checkout репозитория (нужен для чтения banned-words/) ─────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -20,7 +20,6 @@ jobs:
       - name: Validate Issue Format
         uses: actions/github-script@v7
         with:
-          # github-token передаётся явно, чтобы гарантировать права на issues: write
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs   = require('fs');
@@ -47,18 +46,18 @@ jobs:
             const RE = /^<\s*HeroeName\s*\|\s*([a-zA-Z\u0400-\u04FF0-9_ -]{1,15})\s*(?:\|\s*(#[0-9a-fA-F]{3,6})\s*)?\s*>$/i;
             const match = title.length <= MAX_LEN ? title.match(RE) : null;
 
-            let hasColor  = false;
-            let heroName  = '';
+            let hasColor = false;
+            let heroName = '';
 
             if (!match) {
-              if (title.length <= MAX_LEN) {          // ошибку длины уже добавили выше
+              if (title.length <= MAX_LEN) {
                 errors.push(
                   '- The content must be exactly `<HeroeName|Username>` or `<HeroeName|Username|#RRGGBB>` with no extra text.'
                 );
               }
             } else {
-              heroName        = match[1].trim();
-              const color     = match[2];
+              heroName    = match[1].trim();
+              const color = match[2];
 
               if (!heroName || heroName.length === 0) {
                 errors.push('- Username cannot be empty.');
@@ -77,18 +76,27 @@ jobs:
                 }
               }
 
-              // ── Проверка banned-words.txt ─────────────────────────────────
-              const bannedPath = path.join(process.env.GITHUB_WORKSPACE, 'banned-words.txt');
-              if (fs.existsSync(bannedPath)) {
-                const banned = fs.readFileSync(bannedPath, 'utf8')
-                  .split('\n')
-                  .map(w => w.trim().toLowerCase())
-                  .filter(Boolean);
+              // ── Проверка banned-words/ — читаем все .txt из папки ──────────
+              const bannedDir = path.join(process.env.GITHUB_WORKSPACE, 'banned-words');
+              if (fs.existsSync(bannedDir) && fs.statSync(bannedDir).isDirectory()) {
+                const files = fs.readdirSync(bannedDir).filter(f => f.endsWith('.txt'));
+
+                // Объединяем слова из всех файлов в один Set (дедупликация)
+                const bannedSet = new Set();
+                for (const file of files) {
+                  const content = fs.readFileSync(path.join(bannedDir, file), 'utf8');
+                  content
+                    .split('\n')
+                    .map(w => w.trim().toLowerCase())
+                    .filter(Boolean)
+                    .forEach(w => bannedSet.add(w));
+                }
 
                 const lowerName = heroName.toLowerCase();
-                const found = banned.find(w => lowerName.includes(w));
+                const found = [...bannedSet].find(w => lowerName.includes(w));
                 if (found) {
-                  errors.push(`- Username contains a banned word: \`${found}\`.`);
+                  // Не раскрываем само слово пользователю — не даём подсказку
+                  errors.push('- Username contains a banned word.');
                 }
               }
             }
@@ -97,18 +105,17 @@ jobs:
             if (errors.length === 0) {
               const login = issue.user.login;
 
-              // Получаем все issues репозитория (кроме текущего)
               const allIssues = await github.paginate(github.rest.issues.listForRepo, {
-                owner: context.repo.owner,
-                repo:  context.repo.repo,
-                state: 'all',
+                owner:    context.repo.owner,
+                repo:     context.repo.repo,
+                state:    'all',
                 per_page: 100,
               });
 
               const RE_CHECK = /^<\s*HeroeName\s*\|\s*([a-zA-Z\u0400-\u04FF0-9_ -]{1,15})\s*(?:\|\s*(#[0-9a-fA-F]{3,6})\s*)?\s*>$/i;
 
               const validFromAuthor = allIssues.filter(i =>
-                i.number !== issue.number &&          // не считаем текущий
+                i.number !== issue.number &&
                 i.user?.login === login &&
                 (i.title || '').trim().length <= MAX_LEN &&
                 RE_CHECK.test((i.title || '').trim()) &&
@@ -122,9 +129,7 @@ jobs:
               }
             }
 
-            // ────────────────────────────────────────────────────────────────
-            // Убедимся что лейблы существуют
-            // ────────────────────────────────────────────────────────────────
+            // ── Убедимся что лейблы существуют ─────────────────────────────
             for (const [name, color] of [['Valid', '0E8A16'], ['Invalid', 'D93F0B']]) {
               try {
                 await github.rest.issues.getLabel({
@@ -140,7 +145,6 @@ jobs:
             const isValid = errors.length === 0;
 
             if (isValid) {
-              // Добавляем Valid, убираем Invalid
               await github.rest.issues.addLabels({
                 owner: context.repo.owner, repo: context.repo.repo,
                 issue_number: issue.number, labels: ['Valid']
@@ -152,16 +156,10 @@ jobs:
                 });
               } catch (_) {}
 
-              let commentBody = ' **Validation passed!** Your username will be added to the badge.';
+              let commentBody = '✅ **Validation passed!** Your username will be added to the badge.';
 
               if (!hasColor && heroName) {
-                commentBody += `\n\n💡 **Tip — want a custom color?**
-You can also specify your own color by editing the issue to:
-\`\`\`
-<HeroeName|${heroName}|#FF0000>
-\`\`\`
-Replace \`#FF0000\` with any hex color you like (e.g. \`#00FFAA\`, \`#3f88e6\`).
-Without a color, a random one is assigned automatically — which is totally fine!`;
+                commentBody += '\n\n💡 **Tip — want a custom color?**\nYou can also specify your own color by editing the issue to:\n```\n<HeroeName|' + heroName + '|#FF0000>\n```\nReplace `#FF0000` with any hex color you like (e.g. `#00FFAA`, `#3f88e6`).\nWithout a color, a random one is assigned automatically 🎨';
               }
 
               await github.rest.issues.createComment({
@@ -170,7 +168,6 @@ Without a color, a random one is assigned automatically — which is totally fin
               });
 
             } else {
-              // Добавляем Invalid, убираем Valid
               await github.rest.issues.addLabels({
                 owner: context.repo.owner, repo: context.repo.repo,
                 issue_number: issue.number, labels: ['Invalid']
@@ -182,12 +179,9 @@ Without a color, a random one is assigned automatically — which is totally fin
                 });
               } catch (_) {}
 
-              const commentBody =
-                ' **Validation failed.** Please edit your issue to fix the following:\n\n' +
-                errors.join('\n');
-
               await github.rest.issues.createComment({
                 owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: issue.number, body: commentBody
+                issue_number: issue.number,
+                body: '❌ **Validation failed.** Please edit your issue to fix the following:\n\n' + errors.join('\n')
               });
             }
