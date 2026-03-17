@@ -22,57 +22,62 @@ export default async function handler(req, res) {
                     authors.push(cleanName);
                 }
             }
-            if (authors.length >= 5) break;
+            // Увеличено количество до 7
+            if (authors.length >= 7) break;
         }
         
-        while (authors.length < 5) {
+        // Увеличено количество до 7
+        while (authors.length < 7) {
             authors.push(`Waiting...`);
         }
 
-        // Увеличенные параметры холста
         const width = 800;
         const height = 250;
 
         let styles = '';
         let textElements = '';
 
-        const colors = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00'];
+        // Добавлено несколько новых цветов для 7 элементов
+        const colors = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00', '#ffb86c', '#f1fa8c'];
 
         authors.forEach((author, i) => {
-            // Увеличил время анимации, так как холст стал больше
             const durX = (Math.random() * 4 + 4).toFixed(1); 
             const durY = (Math.random() * 3 + 3).toFixed(1); 
+            
+            // Вычисляем случайную отрицательную задержку
+            // Это заставит анимацию стартовать с середины пути
+            const delayX = -(Math.random() * durX).toFixed(1);
+            const delayY = -(Math.random() * durY).toFixed(1);
+
             const color = colors[i % colors.length];
             
-            // Расчет границ
-            const charWidth = 10.8; // Немного увеличил ширину символа для шрифта 18px
+            const charWidth = 10.8; 
             const textWidth = author.length * charWidth;
             const maxX = width - textWidth - 20;
             const maxY = height - 20;
 
-            // Теперь moveX применяется к группе, а moveY к тексту
+            // В свойства animation добавлены ${delayX}s и ${delayY}s
             styles += `
                 .groupX${i} {
-                    animation: moveX${i} ${durX}s linear infinite alternate;
+                    animation: moveX${i} ${durX}s linear ${delayX}s infinite alternate;
                 }
                 .userY${i} {
                     fill: ${color};
                     font-family: monospace;
                     font-size: 18px;
                     font-weight: bold;
-                    animation: moveY${i} ${durY}s linear infinite alternate;
+                    animation: moveY${i} ${durY}s linear ${delayY}s infinite alternate;
                 }
                 @keyframes moveX${i} { 
                     0% { transform: translateX(10px); } 
                     100% { transform: translateX(${maxX}px); } 
                 }
                 @keyframes moveY${i} { 
-                    0% { transform: translateY(40px); } /* Смещение вниз, чтобы текст не обрезался сверху */
+                    0% { transform: translateY(40px); } 
                     100% { transform: translateY(${maxY}px); } 
                 }
             `;
 
-            // Оборачиваем текст в группу <g>
             textElements += `<g class="groupX${i}"><text class="userY${i}">${author}</text></g>\n`;
         });
 
