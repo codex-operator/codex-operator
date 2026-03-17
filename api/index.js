@@ -12,33 +12,24 @@ export default async function handler(req, res) {
         const issues = await apiRes.json();
         let authors = [];
 
-        // Strict validation regex: Must start with <, end with >, and contain no extra text
-        const strictRegex = /^<\s*herosname\s*\|\s*([a-zA-Zа-яА-Я0-9_ -]+)\s*>$/i;
-
+        // Extract names matching the <HeroeName|Username> pattern (case-insensitive)
+        // Strict regex enforces safe characters only (alphanumeric, spaces, -, _) and max length of 15
         for (const issue of issues) {
-            const title = issue.title ? issue.title.trim() : '';
-            const body = issue.body ? issue.body.trim() : '';
-
-            // Title and body must be exactly identical
-            if (title !== body) {
-                continue;
-            }
-
-            const match = title.match(strictRegex);
+            const content = `${issue.title} ${issue.body || ''}`;
+            const match = content.match(/<\s*heroename\s*\|\s*([a-zA-Zа-яА-Я0-9_ -]{1,15})\s*>/i);
             
             if (match && match[1]) {
                 const cleanName = match[1].trim();
-                // Check length restriction programmatically just in case
-                if (cleanName.length > 0 && cleanName.length <= 15) {
-                    if (!authors.includes(cleanName)) {
-                        authors.push(cleanName);
-                    }
+                if (cleanName && !authors.includes(cleanName)) {
+                    authors.push(cleanName);
                 }
             }
             
+            // Limit to 7 unique authors
             if (authors.length >= 7) break;
         }
         
+        // Fill remaining slots if fewer than 7 valid tags are found
         while (authors.length < 7) {
             authors.push('Waiting...');
         }
@@ -52,6 +43,7 @@ export default async function handler(req, res) {
         const colors = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00', '#ffb86c', '#f1fa8c'];
 
         authors.forEach((author, i) => {
+            // Randomize animation duration, delay, and direction for chaotic movement
             const durX = (Math.random() * 4 + 4).toFixed(1); 
             const durY = (Math.random() * 3 + 3).toFixed(1); 
             
@@ -63,6 +55,7 @@ export default async function handler(req, res) {
 
             const color = colors[i % colors.length];
             
+            // Calculate boundaries to keep text inside the SVG canvas
             const charWidth = 10.8; 
             const textWidth = author.length * charWidth;
             const maxX = width - textWidth - 20;
@@ -93,6 +86,7 @@ export default async function handler(req, res) {
             textElements += `<g class="groupX${i}"><text class="userY${i}">${author}</text></g>\n`;
         });
 
+        // Generate the final SVG payload
         const svg = `
             <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
                 <rect width="100%" height="100%" fill="transparent" stroke="#30363d" stroke-width="2"/>
@@ -108,6 +102,7 @@ export default async function handler(req, res) {
         res.status(200).send(svg.trim());
 
     } catch (error) {
+        // Fallback SVG in case of an API error
         const errorSvg = `
             <svg width="850" height="200" xmlns="http://www.w3.org/2000/svg">
                 <rect width="100%" height="100%" fill="transparent" stroke="#ff0000" stroke-width="2"/>
