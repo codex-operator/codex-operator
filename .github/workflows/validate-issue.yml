@@ -1,0 +1,117 @@
+name: Issue Validator
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check Issue Content
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title.trim();
+            const body = (issue.body || '').trim();
+
+            let errors = [];
+
+            // 1. Check if title and body match
+            if (title !== body) {
+              errors.push("- Title and body must be exactly identical.");
+            }
+
+            // 2. Validate exact format
+            const strictRegex = /^<\s*herosname\s*\|\s*(.*?)\s*>$/i;
+            const match = title.match(strictRegex);
+
+            if (!match) {
+              errors.push("- The content must be exactly `<HerosName|Username>` with no extra text before or after.");
+            } else {
+              const username = match[1];
+              
+              // 3. Length validation
+              if (username.length === 0) {
+                errors.push("- Username cannot be empty.");
+              }
+              if (username.length > 15) {
+                errors.push(`- Username is too long (${username.length} characters). Maximum allowed is 15.`);
+              }
+              
+              // 4. Character validation
+              if (/[^a-zA-Zа-яА-Я0-9_ -]/.test(username)) {
+                errors.push("- Username contains invalid characters. Only letters, numbers, spaces, underscores, and hyphens are allowed.");
+              }
+            }
+
+            const isValid = errors.length === 0;
+
+            // Ensure labels exist
+            try {
+              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'Valid' });
+            } catch (e) {
+              await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'Valid', color: '0E8A16' });
+            }
+            try {
+              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'Invalid' });
+            } catch (e) {
+              await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'Invalid', color: 'D93F0B' });
+            }
+
+            if (isValid) {
+              // Add Valid label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['Valid']
+              });
+              // Remove Invalid label if it exists
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: 'Invalid'
+                });
+              } catch (e) {}
+
+              // Leave success comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "Validation passed. The format is correct and the username will be added to the badge."
+              });
+
+            } else {
+              // Add Invalid label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['Invalid']
+              });
+              // Remove Valid label if it exists
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: 'Valid'
+                });
+              } catch (e) {}
+
+              // Leave error comment
+              const commentBody = "Validation failed. Please edit your issue to correct the following errors:\n\n" + errors.join("\n");
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: commentBody
+              });
+            }
