@@ -26,11 +26,11 @@ jobs:
             }
 
             // 2. Validate exact format
-            const strictRegex = /^<\s*herosname\s*\|\s*(.*?)\s*>$/i;
+            const strictRegex = /^<\s*heroename\s*\|\s*(.*?)\s*>$/i;
             const match = title.match(strictRegex);
 
             if (!match) {
-              errors.push("- The content must be exactly `<HerosName|Username>` with no extra text before or after.");
+              errors.push("- The content must be exactly `<HeroeName|Username>` with no extra text before or after.");
             } else {
               const username = match[1];
               
