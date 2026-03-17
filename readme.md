@@ -16,5 +16,4 @@ You can use it in any Markdown file by passing the `user` and `repo` query param
 
 ### Example in Markdown:
 
-```markdown
-![Bouncing Authors](https://<YOUR-VERCEL-APP-URL>/badge?user=OstinUA&repo=Image-storage)
+![Heroes Board](https://codex-operator.vercel.app/api?user=codex-operator&repo=codex-operator)
