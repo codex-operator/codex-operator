@@ -22,27 +22,22 @@ function randomColor() {
     return FALLBACK_COLORS[Math.floor(Math.random() * FALLBACK_COLORS.length)];
 }
 
-// ── Движок матчинга banned-words ─────────────────────────────────────────────
-//
-// Форматы паттернов в .txt файлах:
-//   anal*          — WILDCARD *: любые символы включая пробел
-//   ape+shit       — WILDCARD +: любые символы без пробела
-//   anal && assassin — AND: все части должны присутствовать
-//   analsex        — EXACT: точное совпадение всей строки
-//
+// Pattern rules:
+// * matches any characters, including spaces.
+// + matches one or more non-space characters.
+// && requires every part to match.
+// No wildcard means exact match.
 function matchPattern(pattern, str) {
-    // AND-правило: все части должны матчиться
     if (pattern.includes('&&')) {
         const parts = pattern.split('&&').map(p => p.trim()).filter(Boolean);
         return parts.every(p => matchPattern(p, str));
     }
 
-    // Wildcard: * или + присутствуют
     if (pattern.includes('*') || pattern.includes('+')) {
         const reStr = pattern
             .replace(/[.^${}()|[\]\\]/g, '\\$&')
-            .replace(/\*/g, '[\\s\\S]*')   // * = что угодно
-            .replace(/\+/g, '[^\\s]+');    // + = без пробела
+            .replace(/\*/g, '[\\s\\S]*')
+            .replace(/\+/g, '[^\\s]+');
 
         const startsWild = pattern[0] === '*' || pattern[0] === '+';
         const endsWild   = pattern[pattern.length - 1] === '*' || pattern[pattern.length - 1] === '+';
@@ -50,21 +45,18 @@ function matchPattern(pattern, str) {
         let re;
         try {
             re = (startsWild || endsWild)
-                ? new RegExp(reStr, 'i')           // substring match
-                : new RegExp('^' + reStr + '$', 'i'); // full match
+                ? new RegExp(reStr, 'i')
+                : new RegExp('^' + reStr + '$', 'i');
         } catch {
             return false;
         }
         return re.test(str);
     }
 
-    // EXACT
     return str === pattern;
 }
 
-// Загружает паттерны из переменной окружения BANNED_WORDS_PATTERNS
-// Формат: паттерны разделены символом | (pipe)
-// Пример: anal*|ape+shit|anal && assassin|analsex
+// Patterns come from BANNED_WORDS_PATTERNS, separated by '|'.
 function loadBannedPatterns() {
     const raw = process.env.BANNED_WORDS_PATTERNS || '';
     return raw
@@ -120,7 +112,6 @@ export default async function handler(req, res) {
             if (seenNames.has(name.toLowerCase())) continue;
             seenNames.add(name.toLowerCase());
 
-            // ── Проверка banned-words ─────────────────────────────────────
             if (isBanned(name)) continue;
 
             authors.push({ name, color: safeCssColor(color) });
