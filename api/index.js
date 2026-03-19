@@ -1,10 +1,7 @@
 const FALLBACK_COLORS = ['#3f88e6', '#00ffff', '#ff4500', '#ff00ff', '#00ff00', '#ffb86c', '#f1fa8c'];
 
-// ── Security: max raw title length before regex ──────────────────────────────
 const MAX_TITLE_LEN = 60;
 
-// ── Strict regex – no .*? wildcards, fixed char class, anchored ──────────────
-// Accepts: <HeroeName|Username>  or  <HeroeName|Username|#RRGGBB>
 const ISSUE_RE = /^<\s*HeroeName\s*\|\s*([a-zA-Z\u0400-\u04FF0-9_ -]{1,15})\s*(?:\|\s*(#[0-9a-fA-F]{3,6})\s*)?\s*>$/i;
 
 function escapeXml(str) {
@@ -13,7 +10,6 @@ function escapeXml(str) {
     );
 }
 
-// CSS-context sanitizer: allow only hex chars and # (used for color in <style>)
 function safeCssColor(color) {
     return /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#888888';
 }
@@ -24,6 +20,63 @@ function isValidHex(color) {
 
 function randomColor() {
     return FALLBACK_COLORS[Math.floor(Math.random() * FALLBACK_COLORS.length)];
+}
+
+// ── Движок матчинга banned-words ─────────────────────────────────────────────
+//
+// Форматы паттернов в .txt файлах:
+//   anal*          — WILDCARD *: любые символы включая пробел
+//   ape+shit       — WILDCARD +: любые символы без пробела
+//   anal && assassin — AND: все части должны присутствовать
+//   analsex        — EXACT: точное совпадение всей строки
+//
+function matchPattern(pattern, str) {
+    // AND-правило: все части должны матчиться
+    if (pattern.includes('&&')) {
+        const parts = pattern.split('&&').map(p => p.trim()).filter(Boolean);
+        return parts.every(p => matchPattern(p, str));
+    }
+
+    // Wildcard: * или + присутствуют
+    if (pattern.includes('*') || pattern.includes('+')) {
+        const reStr = pattern
+            .replace(/[.^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '[\\s\\S]*')   // * = что угодно
+            .replace(/\+/g, '[^\\s]+');    // + = без пробела
+
+        const startsWild = pattern[0] === '*' || pattern[0] === '+';
+        const endsWild   = pattern[pattern.length - 1] === '*' || pattern[pattern.length - 1] === '+';
+
+        let re;
+        try {
+            re = (startsWild || endsWild)
+                ? new RegExp(reStr, 'i')           // substring match
+                : new RegExp('^' + reStr + '$', 'i'); // full match
+        } catch {
+            return false;
+        }
+        return re.test(str);
+    }
+
+    // EXACT
+    return str === pattern;
+}
+
+// Загружает паттерны из переменной окружения BANNED_WORDS_PATTERNS
+// Формат: паттерны разделены символом | (pipe)
+// Пример: anal*|ape+shit|anal && assassin|analsex
+function loadBannedPatterns() {
+    const raw = process.env.BANNED_WORDS_PATTERNS || '';
+    return raw
+        .split('|')
+        .map(p => p.trim().toLowerCase())
+        .filter(Boolean);
+}
+
+function isBanned(name) {
+    const patterns = loadBannedPatterns();
+    const input    = name.toLowerCase();
+    return patterns.some(p => matchPattern(p, input));
 }
 
 export default async function handler(req, res) {
@@ -45,13 +98,12 @@ export default async function handler(req, res) {
 
         const issues = await apiRes.json();
         const authors        = [];
-        const seenNames      = new Set();          // уникальные hero-имена
-        const authorIssueMap = new Map();          // GitHub login → кол-во принятых issues
+        const seenNames      = new Set();
+        const authorIssueMap = new Map();
 
         for (const issue of issues) {
             const raw = (issue.title || '').trim();
 
-            // ── ReDoS mitigation: reject long titles before regex ─────────────
             if (raw.length > MAX_TITLE_LEN) continue;
 
             const m = raw.match(ISSUE_RE);
@@ -61,14 +113,15 @@ export default async function handler(req, res) {
             const name  = m[1].trim();
             const color = (m[2] && isValidHex(m[2])) ? m[2] : randomColor();
 
-            // ── Limit: не более 2 принятых issues от одного GitHub-аккаунта ───
             const count = authorIssueMap.get(login) || 0;
             if (count >= 2) continue;
             authorIssueMap.set(login, count + 1);
 
-            // ── Дедупликация hero-имён ────────────────────────────────────────
             if (seenNames.has(name.toLowerCase())) continue;
             seenNames.add(name.toLowerCase());
+
+            // ── Проверка banned-words ─────────────────────────────────────
+            if (isBanned(name)) continue;
 
             authors.push({ name, color: safeCssColor(color) });
             if (authors.length >= 7) break;
@@ -98,7 +151,6 @@ export default async function handler(req, res) {
             const maxY      = Math.max(40, height - 20);
             const safeName  = escapeXml(name);
 
-            // color already validated by safeCssColor – safe in CSS context
             styles += `
 .gX${i}{animation:mX${i} ${durX}s linear ${delX}s infinite ${dirX};}
 .tY${i}{fill:${color};font-family:monospace;font-size:18px;font-weight:bold;
